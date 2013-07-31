@@ -28,7 +28,7 @@ underlying 'StorableArray'. 'toStorableArray' generates a
 place. For instance, the result of 'toStorableArray' on a
 @'FixedStorableArray' ('N' 10, 'N' 20, 'N' 100) CUChar@ is a
 @'StorableArray' (Int, Int, Int) CUChar@ with its bounds set
-appropriately.
+to @((0,0,0),(9,19,99))@.
 
 -}
 module Data.Array.FixedStorableArray
