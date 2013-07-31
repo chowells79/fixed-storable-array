@@ -7,9 +7,28 @@
 {-|
 
 This module exposes 'FixedStorableArray', a simple wrapper around
-'StorableArray' that is fixed-size at compile time. This allows the
-creation of a 'Storable' instance that significantly eases writing FFI
-bindings to fixed-size native arrays.
+'StorableArray' that uses the @DataKinds@ extension to get type-level
+numeric literals. These allow dimensions to be fully set by the type
+at compile time. This has the added benefit of providing a 'Storable'
+instance that significantly eases writing FFI bindings to fixed-size
+native arrays.
+
+For example, @'FixedStorableArray' ('N' 10) CInt@ has
+a 'Storable' instance that is directly compatible with @int foo[10]@
+in native code.
+
+Multidimensional native arrays are also
+supported. @'FixedStorableArray' ('N' 10, 'N' 20, 'N' 100) CUChar@ is compatible with @unsigned char foo[10][20][100]@.
+
+Other than the 'Storable' instance, 'newFixedStorableArray', and
+'newFixedStorableArray_', the only way to work with a
+'FixedStorableArray' is to use 'toStorableArray' and operate on the
+underlying 'StorableArray'. 'toStorableArray' generates a
+'StorableArray' with the correct type and index values already in
+place. For instance, the result of 'toStorableArray' on a
+@'FixedStorableArray' ('N' 10, 'N' 20, 'N' 100) CUChar@ is a
+@'StorableArray' (Int, Int, Int) CUChar@ with its bounds set
+appropriately.
 
 -}
 module Data.Array.FixedStorableArray
