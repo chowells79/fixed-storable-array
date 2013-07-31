@@ -22,3 +22,4 @@ source-repository head
 library
   exposed-modules:   Data.Array.FixedStorableArray
   build-depends:     base ==4.6.*, array ==0.4.*
+  ghc-options:       -Wall
