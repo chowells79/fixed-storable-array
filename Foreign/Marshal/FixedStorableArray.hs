@@ -32,14 +32,14 @@ place. For instance, the result of 'toStorableArray' on a
 to @((0,0,0),(9,19,99))@.
 
 -}
-module Data.Array.FixedStorableArray
+module Foreign.Marshal.FixedStorableArray
        ( FixedStorableArray
        , newFixedStorableArray
        , newFixedStorableArray_
        , toStorableArray
        , N(..)
        , fromNat
-       , Bounds(..)
+       , HasBounds(..)
        ) where
 
 import GHC.TypeLits
@@ -61,7 +61,7 @@ instance SingI n => Show (N n) where
 
 -- | A conversion function for converting type-level naturals to
 -- value-level. This is being exposed to aid in the creation of
--- additional 'Bounds' instances for those who might desire to do
+-- additional 'HasBounds' instances for those who might desire to do
 -- so. Haddock is currently eating the important qualification that
 -- the type variable @n@ must have the kind 'Nat'.
 fromNat :: forall (proxy :: Nat -> *) (n :: Nat). SingI n => proxy n -> Int
@@ -82,7 +82,7 @@ newtype FixedStorableArray dimensions e =
 
 -- | This class connects dimension descriptions with 'StorableArray'
 -- index types and values.
-class Bounds d where
+class HasBounds d where
     -- | The bounding type for this dimension description
     type Bound d :: *
     -- | The concrete bounds for this dimension
@@ -91,7 +91,7 @@ class Bounds d where
 -- | Create a 'FixedStorableArray' and populate it with copies of the
 -- element passed in. Dimensions will be determined from the return
 -- type.
-newFixedStorableArray :: (Bounds d, Ix (Bound d), Storable e) =>
+newFixedStorableArray :: (HasBounds d, Ix (Bound d), Storable e) =>
                          e -> IO (FixedStorableArray d e)
 newFixedStorableArray x = do
     rec let b = bounds ma
@@ -101,14 +101,14 @@ newFixedStorableArray x = do
 -- | Create a 'FixedStorableArray' and don't populate it with anything
 -- in particular. Contents may or may not be initialized to anything
 -- at all. Dimensions will be determined from the return type.
-newFixedStorableArray_ :: (Bounds d, Ix (Bound d), Storable e) =>
+newFixedStorableArray_ :: (HasBounds d, Ix (Bound d), Storable e) =>
                           IO (FixedStorableArray d e)
 newFixedStorableArray_ = do
     rec let b = bounds ma
         ma <- FixedStorableArray <$> newArray_ b
     return ma
 
-instance (Bounds d, Ix (Bound d), Storable e) =>
+instance (HasBounds d, Ix (Bound d), Storable e) =>
          Storable (FixedStorableArray d e) where
     sizeOf a = sizeOf (undefined :: e) * rangeSize (bounds a)
     alignment _ = alignment (undefined :: e)
@@ -127,27 +127,28 @@ instance (Bounds d, Ix (Bound d), Storable e) =>
 
 
 ----------------------------------------------------------------------------
--- Bounds instances. More can be written, trivially - it's just a matter
+-- HasBounds instances. More can be written, trivially - it's just a matter
 -- of whether they'll ever actually be used.
 
-instance SingI a => Bounds (N a) where
+instance SingI a => HasBounds (N a) where
     type Bound (N a) = Int
     bounds _ = (0, fromNat (N :: N a) - 1)
 
-instance (SingI a, SingI b) => Bounds (N a, N b) where
+instance (SingI a, SingI b) => HasBounds (N a, N b) where
     type Bound (N a, N b) = (Int, Int)
     bounds _ = ((0, 0),
                 (fromNat (N :: N a) - 1,
                  fromNat (N :: N b) - 1))
 
-instance (SingI a, SingI b, SingI c) => Bounds (N a, N b, N c) where
+instance (SingI a, SingI b, SingI c) => HasBounds (N a, N b, N c) where
     type Bound (N a, N b, N c) = (Int, Int, Int)
     bounds _ = ((0, 0, 0),
                 (fromNat (N :: N a) - 1,
                  fromNat (N :: N b) - 1,
                  fromNat (N :: N c) - 1))
 
-instance (SingI a, SingI b, SingI c, SingI d) => Bounds (N a, N b, N c, N d) where
+instance (SingI a, SingI b, SingI c, SingI d) =>
+         HasBounds (N a, N b, N c, N d) where
     type Bound (N a, N b, N c, N d) = (Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0),
                 (fromNat (N :: N a) - 1,
@@ -156,7 +157,7 @@ instance (SingI a, SingI b, SingI c, SingI d) => Bounds (N a, N b, N c, N d) whe
                  fromNat (N :: N d) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e) =>
-         Bounds (N a, N b, N c, N d, N e) where
+         HasBounds (N a, N b, N c, N d, N e) where
     type Bound (N a, N b, N c, N d, N e) = (Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0),
                 (fromNat (N :: N a) - 1,
@@ -166,7 +167,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e) =>
                  fromNat (N :: N e) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f) =>
-         Bounds (N a, N b, N c, N d, N e, N f) where
+         HasBounds (N a, N b, N c, N d, N e, N f) where
     type Bound (N a, N b, N c, N d, N e, N f) = (Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0),
                 (fromNat (N :: N a) - 1,
@@ -177,7 +178,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f) =>
                  fromNat (N :: N f) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g) =>
-         Bounds (N a, N b, N c, N d, N e, N f, N g) where
+         HasBounds (N a, N b, N c, N d, N e, N f, N g) where
     type Bound (N a, N b, N c, N d, N e, N f, N g) =
         (Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0),
@@ -191,7 +192,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g) =>
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h) =>
-         Bounds (N a, N b, N c, N d, N e, N f, N g, N h) where
+         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h) =
         (Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0),
@@ -206,7 +207,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i) =>
-         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i) where
+         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -222,7 +223,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j) =>
-         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j) where
+         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -239,7 +240,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j, SingI k) =>
-         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k) where
+         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -257,8 +258,8 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j, SingI k, SingI l) =>
-         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k,
-                 N l) where
+         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k,
+                    N l) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -277,8 +278,8 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j, SingI k, SingI l, SingI m) =>
-         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l,
-                 N m) where
+         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l,
+                    N m) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l,
                 N m) =
          (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
