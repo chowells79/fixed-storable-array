@@ -1,35 +1,33 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-|
 
-This module exposes 'FixedStorableArray', a simple wrapper around
-'StorableArray' that uses the @DataKinds@ extension to get type-level
-numeric literals. These allow dimensions to be fully set by the type
-at compile time. 'FixedStorableArray' provides a 'Storable' instance
-that significantly eases writing FFI bindings to fixed-size native
-arrays.
-
-For example, @'FixedStorableArray' ('N' 10) CInt@ has
-a 'Storable' instance that is directly compatible with @int foo[10]@
-in native code.
+This module defines 'FixedStorableArray', a simple wrapper around
+'StorableArray' with its dimensions encoded in the
+type. 'FixedStorableArray' provides a 'Storable' instance that uses
+the type-level dimensions, and significantly eases writing FFI
+bindings to fixed-size native arrays. For example,
+@'FixedStorableArray' 10 CInt@ has a 'Storable' instance that is
+directly compatible with @int foo[10]@ in native code.
 
 Multidimensional native arrays are also
-supported. @'FixedStorableArray' ('N' 10, 'N' 20, 'N' 100) CUChar@ is
-compatible with @unsigned char foo[10][20][100]@.
+supported. @'FixedStorableArray' \'(10,20,100) CUChar@ is compatible
+with @unsigned char foo[10][20][100]@. Note the leading @\'@ before
+the tuple containing the dimensions. It marks it as a @DataKinds@
+lifted tuple, necessary to store the dimensions.
 
-Other than the 'Storable' instance, 'newFixedStorableArray', and
-'newFixedStorableArray_', the only way to work with a
-'FixedStorableArray' is to use 'toStorableArray' and operate on the
-underlying 'StorableArray'. 'toStorableArray' generates a
-'StorableArray' with the correct type and index values already in
-place. For instance, the result of 'toStorableArray' on a
-@'FixedStorableArray' ('N' 10, 'N' 20, 'N' 100) CUChar@ is a
-@'StorableArray' (Int, Int, Int) CUChar@ with its bounds set
-to @((0,0,0),(9,19,99))@.
+To operate on the contents of a 'FixedStorableArray', use
+'toStorableArray'. 'toStorableArray' returns a 'StorableArray' with
+the correct type and index values already in place. For example, the
+result of 'toStorableArray' on a @'FixedStorableArray' \'(10,20,100)
+CUChar@ is a @'StorableArray' (Int, Int, Int) CUChar@ with its bounds
+set to @((0,0,0),(9,19,99))@.
 
 -}
 module Foreign.Marshal.FixedStorableArray
@@ -37,51 +35,35 @@ module Foreign.Marshal.FixedStorableArray
        , newFixedStorableArray
        , newFixedStorableArray_
        , toStorableArray
-       , N(..)
-       , fromNat
        , HasBounds(..)
+       , fromNat
        ) where
 
 import GHC.TypeLits
 
 import Data.Array.Storable
 import Data.Functor          ((<$>))
+import Data.Proxy            (Proxy(..))
 
 import Foreign.Storable      (Storable(..))
 import Foreign.Marshal.Array (copyArray)
 import Foreign.Ptr           (castPtr)
 
 
--- | This is a simple proxy type for type-level naturals. All
--- dimension types use this type to store the size along that
--- dimension.
-data N (n :: Nat) = N deriving (Eq, Ord, Enum, Bounded, Ix)
-instance SingI n => Show (N n) where
-    showsPrec p N = showParen True $ showString "N :: N " . shows (fromNat (N :: N n))
-
--- | A conversion function for converting type-level naturals to
--- value-level. This is being exposed to aid in the creation of
--- additional 'HasBounds' instances for those who might desire to do
--- so. Haddock is currently eating the important qualification that
--- the type variable @n@ must have the kind 'Nat'.
-fromNat :: forall (proxy :: Nat -> *) (n :: Nat). SingI n => proxy n -> Int
-fromNat _ = fromInteger $ fromSing (sing :: Sing n)
-
-
 -- | A minimal wrapper for 'StorableArray' that encodes the full
 -- dimensions of the array in the type. Intended for interfacing with
--- (possibly-)multidimensional arrays of fixed size in native code. To
--- get most functionality, use 'toStorableArray'.
+-- (possibly-)multidimensional arrays of fixed size in native code.
 newtype FixedStorableArray dimensions e =
     FixedStorableArray {
         -- | Returns the backing 'StorableArray' of this
-        -- 'FixedStorableArray'. The backing array is shared across
-        -- all invocations of this. Modifications to it will be seen
-        -- across all uses of this 'FixedStorableArray'.
+        -- 'FixedStorableArray'. The backing array is shared such that
+        -- modifications to it will be seen across all uses of this
+        -- 'FixedStorableArray'.
         toStorableArray :: StorableArray (Bound dimensions) e }
 
--- | This class connects dimension descriptions with 'StorableArray'
--- index types and values.
+-- | This class connects dimension description types with
+-- 'StorableArray' index types and values. Instances are provided for
+-- up to 13 dimensions. More can be added if there's any need.
 class HasBounds d where
     -- | The bounding type for this dimension description
     type Bound d :: *
@@ -126,178 +108,200 @@ instance (HasBounds d, Ix (Bound d), Storable e) =>
         withStorableArray sa $ \src -> copyArray dst src count
 
 
+-- | A conversion function for converting type-level naturals to
+-- value-level. This is being exposed to aid in the creation of
+-- additional 'HasBounds' instances for those who might desire to do
+-- so.
+--
+-- Haddock is currently eating the important qualification that the
+-- type variable @n@ must have the kind 'Nat'. The 'SingI' instance is
+-- automatically fulfilled for all types of kind 'Nat'. Its explicit
+-- presence in the signature is an artifact of how GHC implements
+-- dictionary passing and type erasure.
+fromNat :: forall (proxy :: Nat -> *) (n :: Nat). SingI n => proxy n -> Int
+fromNat _ = fromInteger $ fromSing (sing :: Sing n)
+
+
 ----------------------------------------------------------------------------
 -- HasBounds instances. More can be written, trivially - it's just a matter
 -- of whether they'll ever actually be used.
 
-instance HasBounds () where
-    type Bound () = ()
+instance HasBounds ('() :: ()) where
+    type Bound '() = ()
     bounds _ = ((), ())
 
-instance SingI a => HasBounds (N a) where
-    type Bound (N a) = Int
-    bounds _ = (0, fromNat (N :: N a) - 1)
+instance SingI a => HasBounds (a :: Nat) where
+    type Bound (a) = Int
+    bounds _ = (0, fromNat (Proxy :: Proxy a) - 1)
 
-instance (SingI a, SingI b) => HasBounds (N a, N b) where
-    type Bound (N a, N b) = (Int, Int)
+instance (SingI a, SingI b) => HasBounds ('(a, b) :: (Nat, Nat)) where
+    type Bound '(a, b) = (Int, Int)
     bounds _ = ((0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1))
 
-instance (SingI a, SingI b, SingI c) => HasBounds (N a, N b, N c) where
-    type Bound (N a, N b, N c) = (Int, Int, Int)
+instance (SingI a, SingI b, SingI c) =>
+         HasBounds ('(a, b, c) :: (Nat, Nat, Nat)) where
+    type Bound '(a, b, c) = (Int, Int, Int)
     bounds _ = ((0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d) =>
-         HasBounds (N a, N b, N c, N d) where
-    type Bound (N a, N b, N c, N d) = (Int, Int, Int, Int)
+         HasBounds ('(a, b, c, d) :: (Nat, Nat, Nat, Nat)) where
+    type Bound '(a, b, c, d) = (Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e) =>
-         HasBounds (N a, N b, N c, N d, N e) where
-    type Bound (N a, N b, N c, N d, N e) = (Int, Int, Int, Int, Int)
+         HasBounds ('(a, b, c, d, e) :: (Nat, Nat, Nat, Nat, Nat)) where
+    type Bound '(a, b, c, d, e) = (Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1,
-                 fromNat (N :: N e) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1,
+                 fromNat (Proxy :: Proxy e) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f) =>
-         HasBounds (N a, N b, N c, N d, N e, N f) where
-    type Bound (N a, N b, N c, N d, N e, N f) = (Int, Int, Int, Int, Int, Int)
+         HasBounds ('(a, b, c, d, e, f) ::
+                    (Nat, Nat, Nat, Nat, Nat, Nat)) where
+    type Bound '(a, b, c, d, e, f) = (Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1,
-                 fromNat (N :: N e) - 1,
-                 fromNat (N :: N f) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1,
+                 fromNat (Proxy :: Proxy e) - 1,
+                 fromNat (Proxy :: Proxy f) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g) =>
-         HasBounds (N a, N b, N c, N d, N e, N f, N g) where
-    type Bound (N a, N b, N c, N d, N e, N f, N g) =
-        (Int, Int, Int, Int, Int, Int, Int)
+         HasBounds ('(a, b, c, d, e, f, g) ::
+                    (Nat, Nat, Nat, Nat, Nat, Nat, Nat)) where
+    type Bound '(a, b, c, d, e, f, g) = (Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1,
-                 fromNat (N :: N e) - 1,
-                 fromNat (N :: N f) - 1,
-                 fromNat (N :: N g) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1,
+                 fromNat (Proxy :: Proxy e) - 1,
+                 fromNat (Proxy :: Proxy f) - 1,
+                 fromNat (Proxy :: Proxy g) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h) =>
-         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h) where
-    type Bound (N a, N b, N c, N d, N e, N f, N g, N h) =
+         HasBounds ('(a, b, c, d, e, f, g, h) ::
+                    (Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat)) where
+    type Bound '(a, b, c, d, e, f, g, h) =
         (Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1,
-                 fromNat (N :: N e) - 1,
-                 fromNat (N :: N f) - 1,
-                 fromNat (N :: N g) - 1,
-                 fromNat (N :: N h) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1,
+                 fromNat (Proxy :: Proxy e) - 1,
+                 fromNat (Proxy :: Proxy f) - 1,
+                 fromNat (Proxy :: Proxy g) - 1,
+                 fromNat (Proxy :: Proxy h) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i) =>
-         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i) where
-    type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i) =
+         HasBounds ('(a, b, c, d, e, f, g, h, i) ::
+                    (Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat)) where
+    type Bound '(a, b, c, d, e, f, g, h, i) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1,
-                 fromNat (N :: N e) - 1,
-                 fromNat (N :: N f) - 1,
-                 fromNat (N :: N g) - 1,
-                 fromNat (N :: N h) - 1,
-                 fromNat (N :: N i) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1,
+                 fromNat (Proxy :: Proxy e) - 1,
+                 fromNat (Proxy :: Proxy f) - 1,
+                 fromNat (Proxy :: Proxy g) - 1,
+                 fromNat (Proxy :: Proxy h) - 1,
+                 fromNat (Proxy :: Proxy i) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j) =>
-         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j) where
-    type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j) =
+         HasBounds ('(a, b, c, d, e, f, g, h, i, j) ::
+                    (Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat)) where
+    type Bound '(a, b, c, d, e, f, g, h, i, j) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1,
-                 fromNat (N :: N e) - 1,
-                 fromNat (N :: N f) - 1,
-                 fromNat (N :: N g) - 1,
-                 fromNat (N :: N h) - 1,
-                 fromNat (N :: N i) - 1,
-                 fromNat (N :: N j) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1,
+                 fromNat (Proxy :: Proxy e) - 1,
+                 fromNat (Proxy :: Proxy f) - 1,
+                 fromNat (Proxy :: Proxy g) - 1,
+                 fromNat (Proxy :: Proxy h) - 1,
+                 fromNat (Proxy :: Proxy i) - 1,
+                 fromNat (Proxy :: Proxy j) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j, SingI k) =>
-         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k) where
-    type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k) =
+         HasBounds ('(a, b, c, d, e, f, g, h, i, j, k) ::
+                    (Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat))
+      where
+    type Bound '(a, b, c, d, e, f, g, h, i, j, k) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1,
-                 fromNat (N :: N e) - 1,
-                 fromNat (N :: N f) - 1,
-                 fromNat (N :: N g) - 1,
-                 fromNat (N :: N h) - 1,
-                 fromNat (N :: N i) - 1,
-                 fromNat (N :: N j) - 1,
-                 fromNat (N :: N k) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1,
+                 fromNat (Proxy :: Proxy e) - 1,
+                 fromNat (Proxy :: Proxy f) - 1,
+                 fromNat (Proxy :: Proxy g) - 1,
+                 fromNat (Proxy :: Proxy h) - 1,
+                 fromNat (Proxy :: Proxy i) - 1,
+                 fromNat (Proxy :: Proxy j) - 1,
+                 fromNat (Proxy :: Proxy k) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j, SingI k, SingI l) =>
-         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k,
-                    N l) where
-    type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l) =
+         HasBounds ('(a, b, c, d, e, f, g, h, i, j, k, l) ::
+                    (Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat,
+                     Nat)) where
+    type Bound '(a, b, c, d, e, f, g, h, i, j, k, l) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1,
-                 fromNat (N :: N e) - 1,
-                 fromNat (N :: N f) - 1,
-                 fromNat (N :: N g) - 1,
-                 fromNat (N :: N h) - 1,
-                 fromNat (N :: N i) - 1,
-                 fromNat (N :: N j) - 1,
-                 fromNat (N :: N k) - 1,
-                 fromNat (N :: N l) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1,
+                 fromNat (Proxy :: Proxy e) - 1,
+                 fromNat (Proxy :: Proxy f) - 1,
+                 fromNat (Proxy :: Proxy g) - 1,
+                 fromNat (Proxy :: Proxy h) - 1,
+                 fromNat (Proxy :: Proxy i) - 1,
+                 fromNat (Proxy :: Proxy j) - 1,
+                 fromNat (Proxy :: Proxy k) - 1,
+                 fromNat (Proxy :: Proxy l) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j, SingI k, SingI l, SingI m) =>
-         HasBounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l,
-                    N m) where
-    type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l,
-                N m) =
-         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
+         HasBounds ('(a, b, c, d, e, f, g, h, i, j, k, l, m) ::
+                    (Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat, Nat,
+                     Nat, Nat)) where
+    type Bound '(a, b, c, d, e, f, g, h, i, j, k, l, m) =
+        (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-                (fromNat (N :: N a) - 1,
-                 fromNat (N :: N b) - 1,
-                 fromNat (N :: N c) - 1,
-                 fromNat (N :: N d) - 1,
-                 fromNat (N :: N e) - 1,
-                 fromNat (N :: N f) - 1,
-                 fromNat (N :: N g) - 1,
-                 fromNat (N :: N h) - 1,
-                 fromNat (N :: N i) - 1,
-                 fromNat (N :: N j) - 1,
-                 fromNat (N :: N k) - 1,
-                 fromNat (N :: N l) - 1,
-                 fromNat (N :: N m) - 1))
+                (fromNat (Proxy :: Proxy a) - 1,
+                 fromNat (Proxy :: Proxy b) - 1,
+                 fromNat (Proxy :: Proxy c) - 1,
+                 fromNat (Proxy :: Proxy d) - 1,
+                 fromNat (Proxy :: Proxy e) - 1,
+                 fromNat (Proxy :: Proxy f) - 1,
+                 fromNat (Proxy :: Proxy g) - 1,
+                 fromNat (Proxy :: Proxy h) - 1,
+                 fromNat (Proxy :: Proxy i) - 1,
+                 fromNat (Proxy :: Proxy j) - 1,
+                 fromNat (Proxy :: Proxy k) - 1,
+                 fromNat (Proxy :: Proxy l) - 1,
+                 fromNat (Proxy :: Proxy m) - 1))
