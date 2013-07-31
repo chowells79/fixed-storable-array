@@ -55,9 +55,9 @@ import Foreign.Ptr           (castPtr)
 -- | This is a simple proxy type for type-level naturals. All
 -- dimension types use this type to store the size along that
 -- dimension.
-data N (n :: Nat) = N deriving (Eq, Ord, Enum)
+data N (n :: Nat) = N deriving (Eq, Ord, Enum, Bounded, Ix)
 instance SingI n => Show (N n) where
-    show N = "<N " ++ show (fromNat (N :: N n)) ++ ">"
+    showsPrec p N = showParen True $ showString "N :: N " . shows (fromNat (N :: N n))
 
 -- | A conversion function for converting type-level naturals to
 -- value-level. This is being exposed to aid in the creation of
@@ -129,6 +129,10 @@ instance (Bounds d, Ix (Bound d), Storable e) =>
 ----------------------------------------------------------------------------
 -- Bounds instances. More can be written, trivially - it's just a matter
 -- of whether they'll ever actually be used.
+
+instance Bounds () where
+    type Bound () = ()
+    bounds _ = ((), ())
 
 instance SingI a => Bounds (N a) where
     type Bound (N a) = Int
