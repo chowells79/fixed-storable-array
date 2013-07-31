@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecursiveDo #-}
-module FixedStorableArray
+module Data.Array.FixedStorableArray
        ( N
        , FixedStorableArray
        , bounds
