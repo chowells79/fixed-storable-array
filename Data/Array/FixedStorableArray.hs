@@ -4,13 +4,21 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecursiveDo #-}
+{-|
+
+This module exposes 'FixedStorableArray', a simple wrapper around
+'StorableArray' that is fixed-size at compile time. This allows the
+creation of a 'Storable' instance that significantly eases writing FFI
+bindings to fixed-size native arrays.
+
+-}
 module Data.Array.FixedStorableArray
-       ( N
-       , FixedStorableArray
-       , bounds
+       ( FixedStorableArray
        , newFixedStorableArray
        , newFixedStorableArray_
        , toStorableArray
+       , N
+       , Bounds(..)
        ) where
 
 import GHC.TypeLits
@@ -23,7 +31,9 @@ import Foreign.Marshal.Array (copyArray)
 import Foreign.Ptr           (castPtr)
 
 
--- | This is a simple proxy type for type-level naturals.
+-- | This is a simple proxy type for type-level naturals. All
+-- dimension types use this type to store the size along that
+-- dimension.
 data N (n :: Nat) = N deriving (Eq, Ord, Enum)
 instance SingI n => Show (N n) where
     show N = "<N " ++ show (fromNat (N :: N n)) ++ ">"
@@ -34,45 +44,47 @@ fromNat :: forall (proxy :: Nat -> *) (n :: Nat). SingI n => proxy n -> Int
 fromNat _ = fromInteger $ fromSing (sing :: Sing n)
 
 
--- | A minimal wrapper for StorableArray that encodes the full
+-- | A minimal wrapper for 'StorableArray' that encodes the full
 -- dimensions of the array in the type. Intended for interfacing with
 -- (possibly-)multidimensional arrays of fixed size in native code. To
--- get most functionality, use toStorableArray.
+-- get most functionality, use 'toStorableArray'.
 newtype FixedStorableArray dimensions e =
     FixedStorableArray {
-        -- | Returns the backing StorableArray of this
-        -- FixedStorableArray. The backing array is shared across all
-        -- invocations of this. Modifications to it will be seen
-        -- across all uses of this FixedStorableArray.
+        -- | Returns the backing 'StorableArray' of this
+        -- 'FixedStorableArray'. The backing array is shared across
+        -- all invocations of this. Modifications to it will be seen
+        -- across all uses of this 'FixedStorableArray'.
         toStorableArray :: StorableArray (Bound dimensions) e }
 
--- Class for connecting dimension descriptions with StorableArray
--- index types and values. Instances are at the end of the file.
-class FSA d where
+-- | This class connects dimension descriptions with 'StorableArray'
+-- index types and values.
+class Bounds d where
+    -- | The bounding type for this dimension description
     type Bound d :: *
+    -- | The concrete bounds for this dimension
     bounds :: FixedStorableArray d e -> (Bound d, Bound d)
 
--- | Create a FixedStorableArray and populate it with copies of the
+-- | Create a 'FixedStorableArray' and populate it with copies of the
 -- element passed in. Dimensions will be determined from the return
 -- type.
-newFixedStorableArray :: (FSA d, Ix (Bound d), Storable e) =>
+newFixedStorableArray :: (Bounds d, Ix (Bound d), Storable e) =>
                          e -> IO (FixedStorableArray d e)
 newFixedStorableArray x = do
     rec let b = bounds ma
         ma <- FixedStorableArray <$> newArray b x
     return ma
 
--- | Create a FixedStorableArray and don't populate it with anything
+-- | Create a 'FixedStorableArray' and don't populate it with anything
 -- in particular. Contents may or may not be initialized to anything
 -- at all. Dimensions will be determined from the return type.
-newFixedStorableArray_ :: (FSA d, Ix (Bound d), Storable e) =>
+newFixedStorableArray_ :: (Bounds d, Ix (Bound d), Storable e) =>
                           IO (FixedStorableArray d e)
 newFixedStorableArray_ = do
     rec let b = bounds ma
         ma <- FixedStorableArray <$> newArray_ b
     return ma
 
-instance (FSA d, Ix (Bound d), Storable e) =>
+instance (Bounds d, Ix (Bound d), Storable e) =>
          Storable (FixedStorableArray d e) where
     sizeOf a = sizeOf (undefined :: e) * rangeSize (bounds a)
     alignment _ = alignment (undefined :: e)
@@ -91,27 +103,27 @@ instance (FSA d, Ix (Bound d), Storable e) =>
 
 
 ----------------------------------------------------------------------------
--- FSA instances. More can be written, trivially - it's just a matter
+-- Bounds instances. More can be written, trivially - it's just a matter
 -- of whether they'll ever actually be used.
 
-instance SingI a => FSA (N a) where
+instance SingI a => Bounds (N a) where
     type Bound (N a) = Int
     bounds _ = (0, fromNat (N :: N a) - 1)
 
-instance (SingI a, SingI b) => FSA (N a, N b) where
+instance (SingI a, SingI b) => Bounds (N a, N b) where
     type Bound (N a, N b) = (Int, Int)
     bounds _ = ((0, 0),
                 (fromNat (N :: N a) - 1,
                  fromNat (N :: N b) - 1))
 
-instance (SingI a, SingI b, SingI c) => FSA (N a, N b, N c) where
+instance (SingI a, SingI b, SingI c) => Bounds (N a, N b, N c) where
     type Bound (N a, N b, N c) = (Int, Int, Int)
     bounds _ = ((0, 0, 0),
                 (fromNat (N :: N a) - 1,
                  fromNat (N :: N b) - 1,
                  fromNat (N :: N c) - 1))
 
-instance (SingI a, SingI b, SingI c, SingI d) => FSA (N a, N b, N c, N d) where
+instance (SingI a, SingI b, SingI c, SingI d) => Bounds (N a, N b, N c, N d) where
     type Bound (N a, N b, N c, N d) = (Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0),
                 (fromNat (N :: N a) - 1,
@@ -120,7 +132,7 @@ instance (SingI a, SingI b, SingI c, SingI d) => FSA (N a, N b, N c, N d) where
                  fromNat (N :: N d) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e) =>
-         FSA (N a, N b, N c, N d, N e) where
+         Bounds (N a, N b, N c, N d, N e) where
     type Bound (N a, N b, N c, N d, N e) = (Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0),
                 (fromNat (N :: N a) - 1,
@@ -130,7 +142,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e) =>
                  fromNat (N :: N e) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f) =>
-         FSA (N a, N b, N c, N d, N e, N f) where
+         Bounds (N a, N b, N c, N d, N e, N f) where
     type Bound (N a, N b, N c, N d, N e, N f) = (Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0),
                 (fromNat (N :: N a) - 1,
@@ -141,7 +153,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f) =>
                  fromNat (N :: N f) - 1))
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g) =>
-         FSA (N a, N b, N c, N d, N e, N f, N g) where
+         Bounds (N a, N b, N c, N d, N e, N f, N g) where
     type Bound (N a, N b, N c, N d, N e, N f, N g) =
         (Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0),
@@ -155,7 +167,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g) =>
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h) =>
-         FSA (N a, N b, N c, N d, N e, N f, N g, N h) where
+         Bounds (N a, N b, N c, N d, N e, N f, N g, N h) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h) =
         (Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0),
@@ -170,7 +182,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i) =>
-         FSA (N a, N b, N c, N d, N e, N f, N g, N h, N i) where
+         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -186,7 +198,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j) =>
-         FSA (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j) where
+         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -203,7 +215,7 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j, SingI k) =>
-         FSA (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k) where
+         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -221,7 +233,8 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j, SingI k, SingI l) =>
-         FSA (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l) where
+         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k,
+                 N l) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l) =
         (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
     bounds _ = ((0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
@@ -240,8 +253,8 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
 
 instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
           SingI h, SingI i, SingI j, SingI k, SingI l, SingI m) =>
-         FSA (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l,
-              N m) where
+         Bounds (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l,
+                 N m) where
     type Bound (N a, N b, N c, N d, N e, N f, N g, N h, N i, N j, N k, N l,
                 N m) =
          (Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, Int)
