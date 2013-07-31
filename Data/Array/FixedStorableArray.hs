@@ -36,7 +36,8 @@ module Data.Array.FixedStorableArray
        , newFixedStorableArray
        , newFixedStorableArray_
        , toStorableArray
-       , N
+       , N(..)
+       , fromNat
        , Bounds(..)
        ) where
 
@@ -57,8 +58,11 @@ data N (n :: Nat) = N deriving (Eq, Ord, Enum)
 instance SingI n => Show (N n) where
     show N = "<N " ++ show (fromNat (N :: N n)) ++ ">"
 
--- a conversion function for converting type-level naturals to
--- value-level.
+-- | A conversion function for converting type-level naturals to
+-- value-level. This is being exposed to aid in the creation of
+-- additional 'Bounds' instances for those who might desire to do
+-- so. Haddock is currently eating the important qualification that
+-- the type variable @n@ must have the kind 'Nat'.
 fromNat :: forall (proxy :: Nat -> *) (n :: Nat). SingI n => proxy n -> Int
 fromNat _ = fromInteger $ fromSing (sing :: Sing n)
 
