@@ -126,6 +126,10 @@ fromNat _ = fromInteger $ fromSing (sing :: Sing n)
 -- HasBounds instances. More can be written, trivially - it's just a matter
 -- of whether they'll ever actually be used.
 
+instance HasBounds ('() :: ()) where
+    type Bound '() = ()
+    bounds _ = ((), ())
+
 instance SingI a => HasBounds (a :: Nat) where
     type Bound (a) = Int
     bounds _ = (0, fromNat (Proxy :: Proxy a) - 1)
