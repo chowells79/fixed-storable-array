@@ -303,13 +303,13 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
                  fromNat (Proxy :: Proxy l) - 1,
                  fromNat (Proxy :: Proxy m) - 1))
 
-instance Bound ('[] :: [Nat]) where
-    type Bound '[] = ()
+instance SingI n => HasBounds ('[n] :: [Nat]) where
+    type Bound ('[n]) = Int
+    bounds _ = (0, fromNat (Proxy :: Proxy n) - 1)
 
-instance (SingI n, Bound ns) => Bound ((n ': ns) :: [Nat]) where
-    type Bound (n ': ns) = (Int, Bound ns)
-    bounds _ = let (b0, bn) = bounds (undefined :: FixedStorableArray ns ())
-               in ((0,
-                    b0),
-                   (fromNat (Proxy :: Proxy n) - 1,
-                    bn)
+instance (SingI n, HasBounds (n2 ': ns)) =>
+         HasBounds ((n ': n2 ': ns) :: [Nat]) where
+    type Bound (n ': n2 ': ns) = (Int, Bound (n2 ': ns))
+    bounds _ = ((0, b0), (fromNat (Proxy :: Proxy n) - 1, bn))
+      where
+        (b0, bn) = bounds (undefined :: FixedStorableArray (n2 ': ns) ())
