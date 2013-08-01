@@ -9,6 +9,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-|
 
+Deprecated - use storable-static-array instead.
+
 This module defines 'FixedStorableArray', a simple wrapper around
 'StorableArray' with its dimensions encoded in the
 type. 'FixedStorableArray' provides a 'Storable' instance that uses
