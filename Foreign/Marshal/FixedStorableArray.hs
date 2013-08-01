@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -301,3 +302,14 @@ instance (SingI a, SingI b, SingI c, SingI d, SingI e, SingI f, SingI g,
                  fromNat (Proxy :: Proxy k) - 1,
                  fromNat (Proxy :: Proxy l) - 1,
                  fromNat (Proxy :: Proxy m) - 1))
+
+instance Bound ('[] :: [Nat]) where
+    type Bound '[] = ()
+
+instance (SingI n, Bound ns) => Bound ((n ': ns) :: [Nat]) where
+    type Bound (n ': ns) = (Int, Bound ns)
+    bounds _ = let (b0, bn) = bounds (undefined :: FixedStorableArray ns ())
+               in ((0,
+                    b0),
+                   (fromNat (Proxy :: Proxy n) - 1,
+                    bn)
